@@ -1,0 +1,8 @@
+file:/home/k/.gitconfig	user.name=k
+file:/home/k/.gitconfig	user.email=nguyenducanky96@gmail.com
+file:.git/config	core.repositoryformatversion=0
+file:.git/config	core.filemode=true
+file:.git/config	core.bare=false
+file:.git/config	core.logallrefupdates=true
+file:.git/config	remote.origin.url=https://github.com/ankynguyen163/spamTiktok.git
+file:.git/config	remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*
