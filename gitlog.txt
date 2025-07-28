@@ -1,0 +1,14 @@
+--> Đang kiểm tra và cập nhật .gitignore...
+✅ .gitignore đã được cấu hình.
+
+--> Đang kiểm tra remote 'origin'...
+Remote 'origin' đã được cấu hình.
+origin	https://github.com/ankynguyen163/spamTiktok.git (fetch)
+origin	https://github.com/ankynguyen163/spamTiktok.git (push)
+
+--> Đang xử lý nhánh 'alpha'...
+Nhánh 'alpha' đã tồn tại. Chuyển sang nhánh này.
+M	.gitignore
+✅ Đang ở trên nhánh: alpha
+
+--> Đang thêm các thay đổi vào staging area...

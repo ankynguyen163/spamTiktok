@@ -27,3 +27,4 @@ stalkers/youtube/history.json
 *.jpeg
 *.jpg*.pyc
 *.jpg
+*.pyc
