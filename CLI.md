@@ -48,6 +48,7 @@ Bạn có thể chạy CLI ở hai chế độ:
     *   `migrate`: Di chuyển dữ liệu từ file lịch sử cũ (global) sang cấu trúc lịch sử mới theo từng tài khoản.
 *   `clean-pending`: Xóa các file video đã được tải về nhưng chưa được upload lên bất kỳ tài khoản nào.
 *   `clean-uploaded`: Xóa các file video gốc đã được upload thành công (dựa trên lịch sử của tất cả các tài khoản).
+*   `storage-report` hoặc `storage`: In báo cáo chi tiết về tình trạng lưu trữ, bao gồm dung lượng, số lượng video, và các file mồ côi.
 *   `delete-videos <account_name> [tùy chọn]`: Xóa các video có hiệu suất thấp trực tiếp trên kênh TikTok.
     *   `--threshold <số>`: Đặt ngưỡng lượt xem để xóa (mặc định: 100).
     *   `--dry-run`: Chạy thử, chỉ liệt kê video sẽ bị xóa mà không thực hiện hành động xóa.

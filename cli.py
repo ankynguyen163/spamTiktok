@@ -68,6 +68,13 @@ COMMANDS = [
         "handler_info": ["Tiktok.cleanStorage.manager", "uploaded"],
     },
     {
+        "name": "storage-report",
+        "aliases": ["storage"],
+        "description": "📊 In báo cáo chi tiết về tình trạng lưu trữ (storage).",
+        "handler_type": "python_module",
+        "handler_info": ["Tiktok.cleanStorage.utils", "report"],
+    },
+    {
         "name": "history",
         "description": "📜 Quản lý lịch sử upload (xem, xóa, di chuyển).",
         "usage_suffix": "<view|clear|migrate> [args...]",

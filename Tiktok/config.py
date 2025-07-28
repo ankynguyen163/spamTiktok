@@ -71,7 +71,7 @@ def get_description(video_id: str) -> str:
             try:
                 with open(metadata_path, 'r', encoding='utf-8') as f:
                     metadata = json.load(f)
-                return metadata.get("title", "")
+                return metadata.get("description", "")
             except (json.JSONDecodeError, IOError):
                 continue # Nếu file lỗi, tiếp tục tìm ở nguồn khác
     return ""
