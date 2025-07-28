@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+
+# Project-specific ignores
+# Sensitive account data
+accounts/
+
+# Downloaded videos and metadata
+stalkers/facebook/videos/
+stalkers/youtube/videos/
+
+# Browser profiles and session data
+stalkers/facebook/profile/
+
+# History files that might contain sensitive info or are large
+stalkers/facebook/history.json
+stalkers/youtube/history.json
+
+# Log and temporary files
+*.log
+*.png
+*.jpeg
+*.jpg*.pyc
+*.jpg
