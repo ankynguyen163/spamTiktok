@@ -12,3 +12,10 @@ M	.gitignore
 ✅ Đang ở trên nhánh: alpha
 
 --> Đang thêm các thay đổi vào staging area...
+
+--> Đang commit các thay đổi...
+[alpha e4518a3] feat: Cập nhật và đồng bộ mã nguồn lên nhánh alpha
+ 2 files changed, 15 insertions(+)
+ create mode 100644 gitlog.txt
+
+--> Đang đẩy code lên nhánh 'alpha'...
