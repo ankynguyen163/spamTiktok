@@ -5,7 +5,8 @@
 set -e
 
 # --- Cấu hình ---
-REPO_URL="https://github.com/ankynguyen163/spamTiktok.git"
+# Ưu tiên dùng SSH để tránh các vấn đề xác thực với HTTPS/token.
+REPO_URL="git@github.com:ankynguyen163/spamTiktok.git"
 BRANCH_NAME="alpha"
 DEFAULT_COMMIT_MSG="feat: Cập nhật và đồng bộ mã nguồn lên nhánh alpha"
 
@@ -50,6 +51,9 @@ echo -e "\n--> Đang kiểm tra remote 'origin'..."
 if ! git remote -v | grep -q "^origin"; then
     echo "Remote 'origin' chưa tồn tại. Đang thêm remote..."
     git remote add origin "$REPO_URL"
+elif ! git remote -v | grep -q "git@github.com"; then
+    echo "⚠️  Remote 'origin' đang dùng HTTPS. Đang cập nhật sang SSH để xác thực tốt hơn..."
+    git remote set-url origin "$REPO_URL"
 else
     echo "Remote 'origin' đã được cấu hình."
 fi
@@ -77,4 +81,4 @@ echo -e "\n--> Đang đẩy code lên nhánh '$BRANCH_NAME'..."
 git push -u origin "$BRANCH_NAME"
 
 echo -e "\n🎉 Hoàn tất! Mã nguồn của bạn đã được đẩy lên nhánh '$BRANCH_NAME'."
-echo "🔗 Xem tại: ${REPO_URL}/tree/${BRANCH_NAME}"
+echo "🔗 Xem tại: https://github.com/ankynguyen163/spamTiktok/tree/${BRANCH_NAME}"
