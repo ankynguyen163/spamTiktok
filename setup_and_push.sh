@@ -33,6 +33,7 @@ declare -a ignores=(
     "stalkers/youtube/videos/"
     "stalkers/facebook/profile/"
     "stalkers/facebook/history.json"
+    "stalkers/facebook/facebook_cookies_netscape.txt"
     "stalkers/youtube/history.json"
     "*.log"
     "*.png"

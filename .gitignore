@@ -20,6 +20,7 @@ stalkers/facebook/profile/
 # History files that might contain sensitive info or are large
 stalkers/facebook/history.json
 stalkers/youtube/history.json
+stalkers/facebook/facebook_cookies_netscape.txt
 
 # Log and temporary files
 *.log
