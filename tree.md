@@ -30,8 +30,11 @@
     ├── deleteGarbage/          # --- Chức năng Dọn dẹp ---
     │   └── delete_videos.py    # Tự động xóa các video có lượt xem thấp trên kênh TikTok.
     │
-    ├── cleanStorage/           # --- Chức năng Dọn dẹp file video ---
-    │   └── manager.py          # Logic dọn dẹp video (pending & uploaded).
+        ├── cleanStorage/           # --- Chức năng Dọn dẹp file video ---
+    │   ├── __init__.py         # Package marker
+    │   ├── manager.py          # Logic dọn dẹp video (pending & uploaded)
+    │   ├── utils.py            # Utilities: thống kê, báo cáo, phát hiện file mồ côi
+    │   └── README.md           # Tài liệu module cleanStorageng & uploaded).
     │
     ├── login_tiktok.py         # Xử lý đăng nhập TikTok và lưu profile cho một tài khoản.
     ├── config.py               # Cấu hình chính cho module TikTok (đường dẫn, UI selectors).
