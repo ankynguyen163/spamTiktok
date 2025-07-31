@@ -79,7 +79,7 @@ echo -e "\n--> Đang commit các thay đổi..."
 git commit -m "$COMMIT_MSG" || echo "✅ Không có thay đổi nào để commit."
 
 echo -e "\n--> Đang đẩy code lên nhánh '$BRANCH_NAME'..."
-git push -u origin "$BRANCH_NAME"
+git push -u origin "$BRANCH_NAME" --force
 
 echo -e "\n🎉 Hoàn tất! Mã nguồn của bạn đã được đẩy lên nhánh '$BRANCH_NAME'."
 echo "🔗 Xem tại: https://github.com/ankynguyen163/spamTiktok/tree/${BRANCH_NAME}"
