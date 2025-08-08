@@ -83,25 +83,26 @@ if __name__ == "__main__":
 
     if not cookie_db.exists():
         print(f"⚠️ Chưa phát hiện file Cookies cho '{account_name}'.")
-        print("➡️ Sẽ tự động mở Chrome, hãy đăng nhập TikTok trong cửa sổ đó.")
-        print("➡️ Sau khi bạn đóng Chrome, cookies sẽ được tự động lưu.")
+        
+    print("➡️ Sẽ tự động mở Chrome, hãy đăng nhập TikTok trong cửa sổ đó.")
+    print("➡️ Sau khi bạn đóng Chrome, cookies sẽ được tự động lưu.")
 
-        # Mở Chrome thật bằng subprocess
-        chrome_cmd = [
-            "google-chrome",
-            f"--user-data-dir={profile_path.resolve()}",
-            "https://tiktok.com"
-        ]
+    # Mở Chrome thật bằng subprocess
+    chrome_cmd = [
+        "google-chrome",
+        f"--user-data-dir={profile_path.resolve()}",
+        "https://tiktok.com"
+    ]
 
-        chrome_proc = subprocess.Popen(chrome_cmd)
-        chrome_proc.wait()  # Chờ mày login và tự đóng Chrome
+    chrome_proc = subprocess.Popen(chrome_cmd)
+    chrome_proc.wait()  # Chờ mày login và tự đóng Chrome
 
-        # Đợi Chrome flush cookies
-        time.sleep(2)
+    # Đợi Chrome flush cookies
+    time.sleep(2)
 
-        if not cookie_db.exists():
-            print("❌ Đăng nhập thất bại: không tìm thấy file Cookies.")
-            sys.exit(1)
+    if not cookie_db.exists():
+        print("❌ Đăng nhập thất bại: không tìm thấy file Cookies.")
+        sys.exit(1)
 
     # Nếu cookies đã có, tiến hành trích xuất
     extract_chrome_cookies(

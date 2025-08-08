@@ -22,7 +22,7 @@ HISTORY_FILE = FB_DIR / "stalker_history.json"
 # --- Cấu hình cho Stalker Strategy (strategies/facebook.py) ---
 
 # Số giây nghỉ giữa mỗi chu trình quét tất cả các mục tiêu
-SCAN_INTERVAL_SECONDS = 30
+SCAN_INTERVAL_SECONDS = 10
 
 # Số lượng mục tiêu (fanpage/profile) xử lý đồng thời trong một batch.
 # Giúp tránh mở quá nhiều tab cùng lúc, giảm tải cho hệ thống.
@@ -41,10 +41,10 @@ CHROME_DEBUG_PORT = 9225
 CHROME_ARGS = ["--headless=new", "--disable-gpu"]
 
 # Các trang con cần quét trên mỗi fanpage
-SUB_PAGES_TO_SCAN = ["videos", "reels"]
+SUB_PAGES_TO_SCAN = ["videos"]#, "reels"]
 
-# Giới hạn số lượng video mới nhất cần kiểm tra trên mỗi trang con
-MAX_VIDEOS_PER_SECTION = 2
+# Giới hạn số lượng links mới nhất cần kiểm tra trên mỗi trang con
+MAX_LINKS_PER_SECTION = 5
 
 # Timeout (ms) khi tải một trang fanpage
 PAGE_LOAD_TIMEOUT = 60000
@@ -53,10 +53,23 @@ PAGE_LOAD_TIMEOUT = 60000
 PAGE_WAIT_AFTER_LOAD = 5000
 
 # --- Cấu hình cho CSS Selectors ---
-# Selector để tìm các link video trên trang "videos"
-VIDEO_PAGE_SELECTOR = 'a[href*="/videos/"], a[href*="/watch/?v="]'
-# Selector để tìm các link video trên trang "reels"
-REEL_PAGE_SELECTOR = 'a[href*="/reel/"]'
+
+# Định nghĩa các loại trang
+PAGE_TYPE_FANPAGE = 'fanpage'
+PAGE_TYPE_PROFILE = 'profile'
+
+# Selector để tìm các link video trên các loại trang khác nhau
+# Sử dụng cấu trúc dict để dễ dàng mở rộng
+VIDEO_SELECTORS = {
+    PAGE_TYPE_FANPAGE: {
+        "videos": 'a[href*="/videos/"], a[href*="/watch/?v="]',
+        "reels": 'a[href*="/reel/"]',
+    },
+    PAGE_TYPE_PROFILE: {
+        "videos": 'a[href*="&sk=videos"]',
+        "reels": 'a[href*="&sk=reels_tab"]',
+    }
+}
 
 # --- Cấu hình cho Video Downloader (facebook/fb_vid.py) ---
 VIDEOS_DIR = FB_DIR / "videos"

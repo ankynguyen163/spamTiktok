@@ -37,6 +37,10 @@ ACCOUNTS_DIR = BASE_DIR / 'accounts'
 # Tạo thư mục nếu chưa có
 ACCOUNTS_DIR.mkdir(parents=True, exist_ok=True)
 
+def get_video_stalker_dir(source_name: str) -> Path:
+    """Lấy đường dẫn đến thư mục video của một nguồn stalker."""
+    return VIDEO_SOURCES.get(source_name.lower())
+    
 def get_profile_dir(account_name: str) -> Path:
     """Lấy đường dẫn đến thư mục profile của một tài khoản."""
     return ACCOUNTS_DIR / account_name

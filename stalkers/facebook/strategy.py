@@ -8,6 +8,7 @@ import logging
 import subprocess
 import time
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 from playwright.async_api import async_playwright, BrowserContext
 
@@ -18,8 +19,15 @@ from .fb_vid import download_video
 def parse_video_id_from_href(href: str) -> str | None:
     """Trích xuất video ID từ các định dạng URL Facebook khác nhau."""
     if not href: return None
-    match = re.search(r'/(?:videos|reel)/(\d+)|[?&]v=(\d+)', href)
+    # Cập nhật regex để bắt các ID từ URL của video và reel
+    match = re.search(r'/(?:videos|reel)(?:/[^/]+)*/(\d+)|[?&]v=(\d+)', href)
     return match.group(1) or match.group(2) if match else None
+
+def _get_page_type(url: str) -> str:
+    """Xác định loại trang (fanpage hoặc profile) dựa trên cấu trúc URL."""
+    if "profile.php" in url:
+        return fb_config.PAGE_TYPE_PROFILE
+    return fb_config.PAGE_TYPE_FANPAGE
 
 class FacebookStrategy(StalkerStrategy):
     """
@@ -98,39 +106,62 @@ class FacebookStrategy(StalkerStrategy):
         """
         page = None
         found_new_video = False
+        page_type = _get_page_type(base_url)
+
         try:
             page = await context.new_page()
-            full_url = f"{base_url.strip('/')}/{sub_path}"
-            logging.info(f"🕵️  Đang quét trang: {full_url}")
+            
+            # Xây dựng URL dựa trên loại trang
+            if page_type == fb_config.PAGE_TYPE_PROFILE:
+                # Thêm &sk=videos hoặc &sk=reels_tab vào URL của profile
+                sub_path_map = {"videos": "videos", "reels": "reels_tab"}
+                full_url = f"{base_url}&sk={sub_path_map.get(sub_path)}"
+            else: # Fanpage
+                full_url = f"{base_url.strip('/')}/{sub_path}"
+
+            logging.info(f"🕵️  Đang quét trang ({page_type}): {full_url}")
             await page.goto(full_url, wait_until="domcontentloaded", timeout=fb_config.PAGE_LOAD_TIMEOUT)
-            await page.wait_for_timeout(fb_config.PAGE_WAIT_AFTER_LOAD) # Chờ một chút để các video tải
+            await page.wait_for_timeout(fb_config.PAGE_WAIT_AFTER_LOAD)
 
-            # Sử dụng selector cụ thể cho từng trang con để tăng độ chính xác
-            selector_map = {
-                "videos": 'a[href*="/videos/"], a[href*="/watch/?v="]',
-                "reels": 'a[href*="/reel/"]'
-            }
-            # Mặc định dùng selector chung nếu sub_path không có trong map
-            selector = selector_map.get(sub_path, 'a[href*="/videos/"], a[href*="/watch/?v="], a[href*="/reel/"]')
+            # Lấy selector phù hợp từ config
+            selector = fb_config.VIDEO_SELECTORS.get(page_type, {}).get(sub_path)
+            if not selector:
+                logging.warning(f"   -> Không tìm thấy selector cho page_type='{page_type}', sub_path='{sub_path}'")
+                return False
+
             video_links = await page.locator(selector).all()
-            logging.info(f"   -> [{sub_path.upper()}] Tìm thấy {len(video_links)} liên kết video tiềm năng.")
+            logging.info(f"   -> [{sub_path.upper()}] [{full_url}] Tìm thấy {len(video_links)} liên kết video tiềm năng.")
 
-            # Chỉ xử lý N video đầu tiên theo cấu hình
             links_to_process = video_links[:limit]
             logging.info(f"   -> [{sub_path.upper()}] Giới hạn xử lý {len(links_to_process)} liên kết đầu tiên.")
+            
             for link_element in links_to_process:
                 href = await link_element.get_attribute("href")
+                #logging.info(f"   -> Xử lý liên kết: {href}")
                 video_id = parse_video_id_from_href(href)
 
+                # Chấp nhận tải video trùng video cũ đề phòng video đang phát live
+                #if video_id:
+                
                 if video_id and video_id not in self.history:
                     logging.info(f"   -> 🆕 Phát hiện video mới: {video_id}")
-                    video_full_url = f"https://www.facebook.com{href}" if href.startswith('/') else href
+                    
+                    # Chuẩn hóa URL dựa trên sub_path
+                    if sub_path == "videos":
+                        video_full_url = f"https://www.facebook.com/watch/?v={video_id}"
+                    elif sub_path == "reels":
+                        video_full_url = f"https://www.facebook.com/reel/{video_id}"
+                    else:
+                        # Fallback nếu có sub_path lạ
+                        video_full_url = f"https://www.facebook.com{href}" if href.startswith('/') else href
+                    
+                    logging.info(f"   -> 🔗 URL đã chuẩn hóa: {video_full_url}")
 
                     if await download_video(video_full_url, video_id):
                         found_new_video = True
                         self.history.add(video_id)
         except Exception as e:
-            logging.error(f"   -> ❌ Lỗi khi xử lý trang {full_url}: {e}", exc_info=False) # exc_info=False để log gọn hơn
+            logging.error(f"   -> ❌ Lỗi khi xử lý trang {full_url}: {e}", exc_info=False)
         finally:
             if page:
                 await page.close()
@@ -140,39 +171,42 @@ class FacebookStrategy(StalkerStrategy):
         """
         Điều phối việc cào dữ liệu từ các trang con (/videos, /reels) của một mục tiêu.
         """
-        target_name = Path(target_url).name
+        # Lấy tên để log, xử lý cả hai dạng URL
+        parsed_url = urlparse(target_url)
+        if "profile.php" in target_url:
+            target_name = f"profile_{parse_qs(parsed_url.query).get('id', ['unknown'])[0]}"
+        else:
+            target_name = Path(target_url).name
+            
         logging.info(f"--- Bắt đầu xử lý mục tiêu: {target_name} ---")
         sub_pages = fb_config.SUB_PAGES_TO_SCAN
         
-        # Tạo các "agent" (task) để chạy song song cho mỗi trang con
         logging.info(f"   -> Khởi tạo các agent song song cho: {', '.join(sub_pages)}")
         tasks = [
-            self._scrape_subpage(context, target_url, sub_path, limit=fb_config.MAX_VIDEOS_PER_SECTION)
+            self._scrape_subpage(context, target_url, sub_path, limit=fb_config.MAX_LINKS_PER_SECTION)
             for sub_path in sub_pages
         ]
         
-        # Chạy các agent và đợi kết quả
         results = await asyncio.gather(*tasks)
         any_new_video_found = any(results)
 
         if any_new_video_found:
-            self._save_history() # Chỉ lưu lịch sử một lần sau khi quét xong tất cả các trang con
+            self._save_history()
         else:
             logging.info(f"   -> ✅ Không có video mới cho mục tiêu: {target_name}")
 
     async def _main_loop(self):
         """Vòng lặp chính chạy Stalker, có khả năng tự khởi động lại Chrome nếu gặp sự cố."""
-        while True: # Vòng lặp ngoài cùng để đảm bảo Stalker luôn chạy
+        while True:
             chrome_process = self._launch_chrome()
-            time.sleep(5) # Chờ Chrome khởi động
+            time.sleep(5)
 
             try:
                 async with async_playwright() as p:
-                    # Tăng timeout để có thêm thời gian kết nối
                     browser = await p.chromium.connect_over_cdp(f"http://localhost:{fb_config.CHROME_DEBUG_PORT}", timeout=60000)
                     context = browser.contexts[0]
                     logging.info("✅ Kết nối thành công tới trình duyệt Chrome.")
-                    # Vòng lặp quét định kỳ
+                    
                     while True:
                         targets = self.get_targets()
                         if not targets:
@@ -183,7 +217,6 @@ class FacebookStrategy(StalkerStrategy):
 
                         logging.info(f"Bắt đầu chu trình quét mới cho {len(targets)} mục tiêu, batch size = {fb_config.FACEBOOK_BATCH_SIZE}.")
 
-                        # Chia targets thành các batch để xử lý
                         for i in range(0, len(targets), fb_config.FACEBOOK_BATCH_SIZE):
                             batch = targets[i:i + fb_config.FACEBOOK_BATCH_SIZE]
                             current_batch_num = i // fb_config.FACEBOOK_BATCH_SIZE + 1
@@ -193,7 +226,6 @@ class FacebookStrategy(StalkerStrategy):
                             tasks = [self._process_target(context, url) for url in batch]
                             await asyncio.gather(*tasks)
 
-                            # Nếu đây không phải là batch cuối cùng, đợi một chút
                             if i + fb_config.FACEBOOK_BATCH_SIZE < len(targets):
                                 logging.info(f"Đợi {fb_config.WAIT_BETWEEN_BATCHES_SECONDS} giây trước khi xử lý batch tiếp theo.")
                                 await asyncio.sleep(fb_config.WAIT_BETWEEN_BATCHES_SECONDS)
@@ -208,4 +240,4 @@ class FacebookStrategy(StalkerStrategy):
                     chrome_process.terminate()
                     chrome_process.wait()
             
-            await asyncio.sleep(30) # Đợi một khoảng thời gian an toàn trước khi khởi động lại
+            await asyncio.sleep(30)
