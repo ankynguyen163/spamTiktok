@@ -1,15 +1,16 @@
 # config.py - Unified config cho TikTok uploader
-
 import json
+import os
 from pathlib import Path
 
 # Base paths
 BASE_DIR = Path(__file__).parent
 PROJECT_ROOT = BASE_DIR.parent
-STEALTH_SCRIPT = BASE_DIR / 'stealth.js'
+
 
 # --- TikTok UI Selectors (for delete_videos.py) ---
 # These selectors are based on TikTok Studio's UI. They may change and require updates.
+TT_STUDIO_UPLOAD_URL = "https://www.tiktok.com/tiktokstudio/upload?from=creator_center"
 TT_STUDIO_CONTENT_URL = "https://www.tiktok.com/tiktokstudio/content"
 TT_VIEWS_HEADER_SELECTOR = 'div[data-tt="components_PostTableHeader_FlexRow"]:has-text("Lượt xem")'
 TT_VIDEO_ROW_SELECTOR = 'div[data-tt="components_PostTable_Absolute"]'
@@ -18,6 +19,7 @@ TT_MORE_OPTIONS_BUTTON_SELECTOR = 'button[data-tt="components_ActionCell_Clickab
 TT_DELETE_MENU_ITEM_SELECTOR = 'div[data-tt="components_ActionCell_FlexRow"]:has-text("Xóa")'
 TT_CONFIRM_DELETE_BUTTON_SELECTOR = 'button[data-tt="components_Modal_TUXButton"]:has-text("Xóa")'
 
+
 # --- Selectors for Upload Process ---
 TT_SELECT_VIDEO_BUTTON_XPATH = '//div[contains(text(), "Chọn video")]/ancestor::button'
 TT_CAPTION_INPUT_SELECTOR = 'div.public-DraftEditor-content[contenteditable="true"]'
@@ -25,22 +27,32 @@ TT_UPLOAD_PROGRESS_SUCCESS_SELECTOR = 'div.info-progress.success'
 TT_POST_BUTTON_SELECTOR = 'button.Button__root:has-text("Đăng")'
 TT_CONFIRM_POST_BUTTON_SELECTOR = 'button.TUXButton--primary:has-text("Đăng ngay")' # Modal "Đăng ngay"
 
+
+# --- Chrome Debugging ---
+# Đường dẫn đến Chrome executable và cổng debug
+# Cần đảm bảo Chrome đã được cài đặt và có thể truy cập từ đường dẫn
+# Ưu tiên sử dụng biến môi trường CHROME_EXECUTABLE_PATH nếu có
+CHROME_EXECUTABLE = os.environ.get("CHROME_EXECUTABLE_PATH", "google-chrome")
+CHROME_DEBUG_PORT = 9222
+
+# Số lượng video upload song song trong chế độ 'auto'
+# Đặt giá trị cao có thể yêu cầu nhiều tài nguyên hệ thống (CPU, RAM)
+# và có thể bị TikTok giới hạn. Bắt đầu với 2 hoặc 3 là hợp lý.
+MAX_CONCURRENT_UPLOADS = 3
 # Video sources
 VIDEO_SOURCES = {
     'fb': PROJECT_ROOT / 'stalkers' / 'facebook' / 'videos',
     'yt': PROJECT_ROOT / 'stalkers' / 'youtube' / 'videos'
 }
-
 # Directory to store accounts
 ACCOUNTS_DIR = BASE_DIR / 'accounts'
-
 # Tạo thư mục nếu chưa có
 ACCOUNTS_DIR.mkdir(parents=True, exist_ok=True)
 
 def get_video_stalker_dir(source_name: str) -> Path:
     """Lấy đường dẫn đến thư mục video của một nguồn stalker."""
     return VIDEO_SOURCES.get(source_name.lower())
-    
+
 def get_profile_dir(account_name: str) -> Path:
     """Lấy đường dẫn đến thư mục profile của một tài khoản."""
     return ACCOUNTS_DIR / account_name
@@ -75,7 +87,7 @@ def get_description(video_id: str) -> str:
             try:
                 with open(metadata_path, 'r', encoding='utf-8') as f:
                     metadata = json.load(f)
-                return metadata.get("description", "")
+                return metadata.get("title", "")
             except (json.JSONDecodeError, IOError):
                 continue # Nếu file lỗi, tiếp tục tìm ở nguồn khác
     return ""
@@ -101,7 +113,6 @@ def delete_video_file(video_id, source_hint=None):
                     return True
                 except Exception as e:
                     print(f"⚠️ Lỗi xóa {file.name}: {e}")
-    
     # Fallback: tìm trong tất cả nguồn
     deleted = False
     for source_dir in VIDEO_SOURCES.values():
@@ -129,7 +140,6 @@ def is_uploaded(video_id: str, account_name: str = None) -> bool:
             return any(item.get("video_id") == video_id for item in history)
         except (FileNotFoundError, json.JSONDecodeError):
             return False
-
     if account_name:
         # Check history for a specific account
         return _check_history_file(get_history_path(account_name))
@@ -142,21 +152,18 @@ def is_uploaded(video_id: str, account_name: str = None) -> bool:
                 if _check_history_file(account_dir / 'history.json'):
                     return True
         return False
-
+    
 def save_upload_history(video_id: str, description: str = "", account_name: str = None):
     """Lưu lịch sử upload TikTok vào file history của tài khoản."""
     if not account_name:
         raise ValueError("account_name is required to save upload history.")
-
     history_file = get_history_path(account_name)
     history_file.parent.mkdir(parents=True, exist_ok=True)
-
     try:
         with open(history_file, 'r', encoding='utf-8') as f:
             history = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         history = []
-    
     from datetime import datetime
     history.append({
         "video_id": video_id,
@@ -164,12 +171,10 @@ def save_upload_history(video_id: str, description: str = "", account_name: str 
         "upload_time": datetime.now().isoformat(),
         "account_name": account_name,
     })
-    
     with open(history_file, 'w', encoding='utf-8') as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
-    
     print(f"💾 Đã lưu {video_id} (tài khoản: {account_name}) vào TT history")
-
+    
 def get_upload_count(account_name: str) -> int:
     """Đếm số lượng video đã upload của một tài khoản."""
     history_path = get_history_path(account_name)

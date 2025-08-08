@@ -40,10 +40,10 @@ async def download_video(video_url: str, video_id: str) -> bool:
         "--no-warnings",
         "--cookies", str(fb_config.COOKIE_FILE.resolve()),
         "-f", fb_config.YT_DLP_FORMAT,
-        # Luôn ghi info.json để xử lý
         "--write-info-json",
-        # Chỉ tải video nếu nó chưa tồn tại
         "--no-overwrites",
+        "--recode-video", "mp4",
+        "--postprocessor-args", "ffmpeg:-b:v 1200k",  # ví dụ bitrate ~1.2 Mbps
         "-o", str(output_template),
         video_url
     ]
