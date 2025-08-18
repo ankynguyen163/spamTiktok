@@ -10,7 +10,8 @@ import os
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(project_root))
 
-from Tiktok.config import ACCOUNTS_DIR, get_history_path
+from Tiktok.config import ACCOUNTS_DIR
+from Tiktok.utils import get_history_path
 
 # Đường dẫn tuyệt đối đến file lịch sử cũ
 OLD_HISTORY_FILE = project_root / 'Tiktok' / 'spamUploadTiktok' / 'history' / 'video_history.json'

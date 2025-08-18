@@ -1,31 +1,27 @@
 import asyncio
 import sys
-import subprocess
 import time
 import logging
 import os
 from pathlib import Path
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, TimeoutError, Page, BrowserContext
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 # Import from shared modules
 from Tiktok.config import (
-    get_profile_dir,
-    get_description,
-    is_uploaded,
-    save_upload_history,
-    get_all_videos,
-    find_video_source,
     TT_STUDIO_UPLOAD_URL,
     TT_CONFIRM_POST_BUTTON_SELECTOR,
     TT_SELECT_VIDEO_BUTTON_XPATH,
     TT_CAPTION_INPUT_SELECTOR,
     TT_UPLOAD_PROGRESS_SUCCESS_SELECTOR,
     TT_POST_BUTTON_SELECTOR,
-    get_video_stalker_dir,
-    CHROME_EXECUTABLE,
     CHROME_DEBUG_PORT,
     MAX_CONCURRENT_UPLOADS
+)
+from Tiktok.utils import (
+    get_profile_dir, open_chrome_for_automation, get_video_id,
+    get_id_from_stem, get_video_stalker_dir, get_description,
+    is_uploaded, save_upload_history, get_all_videos, find_video_source
 )
 from .utils import clean_caption, generate_hashtags
 # --- Logging Setup ---
@@ -33,23 +29,7 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S')
 # --- Helper Functions ---
-def open_chrome_for_automation(account_name: str, port=CHROME_DEBUG_PORT, url=None):
-    """Mở Chrome với profile và cổng gỡ lỗi được chỉ định."""
-    command = [
-        CHROME_EXECUTABLE,
-        f"--user-data-dir={get_profile_dir(account_name)}",
-        f"--remote-debugging-port={port}",
-        "--new-window",
-    ]
-    if url:
-        command.append(url)
-    try:
-        subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        logging.info(f"🚀 Đã yêu cầu mở Chrome profile '{account_name}' trên cổng {port}.")
-        time.sleep(3) # Chờ một chút để trình duyệt khởi động
-    except FileNotFoundError:
-        logging.error("Lỗi: Lệnh 'google-chrome' không được tìm thấy. Vui lòng cài đặt Google Chrome.")
-        sys.exit(1)
+
         
 def get_upload_candidates(account_name: str, show_list=True):
     """Lấy danh sách các video có thể upload (chưa được upload bởi tài khoản này)."""
@@ -90,22 +70,47 @@ def get_upload_candidates(account_name: str, show_list=True):
 async def complete_upload_process(page, video_id, description, source, account_name):
     """Hoàn tất các bước cuối của quá trình upload sau khi đã chọn file."""
     logging.info(f"📄 Bắt đầu hoàn tất upload cho Video ID: {video_id} [{source.upper()}]")
+    logging.info(f"   📝 Mô tả: {description if description else 'Không có mô tả'}")
     if is_uploaded(video_id, account_name):
         logging.warning(f"⚠️ Video {video_id} đã được tài khoản này upload. Bỏ qua.")
         return False
     clean_desc = clean_caption(description)
-    full_caption = (clean_desc + "\n\n" + generate_hashtags()) if clean_desc else generate_hashtags()
+    full_caption = (clean_desc + "\n\n" + generate_hashtags()) if description else generate_hashtags()
     try:
         caption_input = page.locator(TT_CAPTION_INPUT_SELECTOR)
-        await caption_input.wait_for(state="visible", timeout=30000)
+        try:
+            await caption_input.wait_for(state="visible", timeout=30000)
+        except TimeoutError:
+            logging.error(f"❌ Timeout: Không tìm thấy ô nhập caption cho video {video_id}.")
+            try:
+                await page.screenshot(path=f"error_caption_timeout_{video_id}.png")
+            except Exception as screenshot_error:
+                logging.error(f"📸 Không thể chụp ảnh màn hình: {screenshot_error}")
+            return False
         await caption_input.fill('')
         await caption_input.fill(full_caption)
         logging.info("✍️  Đã điền caption.")
         logging.info("⏳ Đang chờ video tải lên server TikTok (có thể mất vài phút)...")
-        await page.wait_for_selector(TT_UPLOAD_PROGRESS_SUCCESS_SELECTOR, timeout=600_000)
+        try:
+            await page.wait_for_selector(TT_UPLOAD_PROGRESS_SUCCESS_SELECTOR, timeout=600_000)
+        except TimeoutError:
+            logging.error(f"❌ Timeout: Video {video_id} tải lên server TikTok quá lâu.")
+            try:
+                await page.screenshot(path=f"error_upload_timeout_{video_id}.png")
+            except Exception as screenshot_error:
+                logging.error(f"📸 Không thể chụp ảnh màn hình: {screenshot_error}")
+            return False
         logging.info("✅ Video đã được tải lên server TikTok thành công.")
         post_button = page.locator(TT_POST_BUTTON_SELECTOR).first
-        await post_button.wait_for(state="visible", timeout=30000)
+        try:
+            await post_button.wait_for(state="visible", timeout=30000)
+        except TimeoutError:
+            logging.error(f"❌ Timeout: Không tìm thấy nút 'Đăng' cho video {video_id}.")
+            try:
+                await page.screenshot(path=f"error_post_button_timeout_{video_id}.png")
+            except Exception as screenshot_error:
+                logging.error(f"📸 Không thể chụp ảnh màn hình: {screenshot_error}")
+            return False
         await post_button.click()
         logging.info("🅿️  Đã bấm nút 'Đăng', chờ xác nhận...")
         try:
@@ -114,9 +119,18 @@ async def complete_upload_process(page, video_id, description, source, account_n
             logging.info("...Phát hiện modal xác nhận. Đang click 'Đăng ngay'...")
             await confirm_post_button.click()
             await confirm_post_button.wait_for(state="hidden", timeout=10000)
-        except Exception:
+        except (TimeoutError, Exception):
             logging.info("...Không có modal xác nhận hoặc đã hết thời gian chờ. Tiếp tục...")
-        await post_button.wait_for(state="hidden", timeout=60000)
+
+        try:
+            await post_button.wait_for(state="hidden", timeout=60000)
+        except TimeoutError:
+            logging.warning(f"⚠️ Timeout: Nút 'Đăng' không biến mất sau khi click cho video {video_id}. Có thể video vẫn đang được xử lý.")
+            try:
+                await page.screenshot(path=f"error_post_disappear_timeout_{video_id}.png")
+            except Exception as screenshot_error:
+                logging.error(f"📸 Không thể chụp ảnh màn hình: {screenshot_error}")
+            
         logging.info(f"🚀 Đã gửi yêu cầu đăng video {video_id}.")
         save_upload_history(video_id, description, account_name)
         logging.info(f"--- ✅ Hoàn tất xử lý cho: {video_id} ---")
@@ -124,7 +138,10 @@ async def complete_upload_process(page, video_id, description, source, account_n
         return True
     except Exception as e:
         logging.error(f"❌ Lỗi trong hàm complete_upload_process cho video {video_id}: {e}")
-        await page.screenshot(path=f"error_complete_upload_{video_id}.png")
+        try:
+            await page.screenshot(path=f"error_complete_upload_{video_id}.png")
+        except Exception as screenshot_error:
+            logging.error(f"📸 Không thể chụp ảnh màn hình: {screenshot_error}")
         return False
     
 
@@ -182,54 +199,82 @@ class VideoReadyHandler(FileSystemEventHandler):
 
 # --- Mode-specific Logic ---
 
-async def upload_processor(queue: asyncio.Queue, account_name: str, page, worker_id: int):
+async def upload_processor(queue: asyncio.Queue, account_name: str, context: BrowserContext, worker_id: int):
     """
     Một "công nhân" lấy video từ hàng đợi và xử lý việc upload trên một tab riêng.
+    Worker sẽ tự phục hồi bằng cách tạo tab mới nếu gặp lỗi nghiêm trọng.
     """
+    page = await context.new_page()
     logging.info(f"[Worker {worker_id}] Bắt đầu, điều hướng đến trang upload...")
     await page.goto(TT_STUDIO_UPLOAD_URL, wait_until="domcontentloaded")
+
     while True:
         video_path_str = await queue.get()
         video_path = Path(video_path_str)
-        video_id = video_path.stem
+        video_id = get_video_id(video_path)
         logging.info(f"[Worker {worker_id}] Đã nhận video: {video_id}")
-        # Thêm kiểm tra file tồn tại ngay trước khi xử lý
-        if not os.path.exists(video_path_str):
-            logging.warning(f"⚠️ [Worker {worker_id}] File {os.path.basename(video_path_str)} không còn tồn tại. Bỏ qua.")
-            queue.task_done()
-            continue
-        if is_uploaded(video_id, account_name):
-            logging.info(f"🔵 [Worker {worker_id}] Video {video_id} đã được xử lý. Bỏ qua.")
-            queue.task_done()
-            continue
-        source, _ = find_video_source(video_id)
-        description = get_description(video_id) or ""
-        logging.info(f"--- 📤 [Worker {worker_id}] Bắt đầu upload: {video_id} ---")
+
         try:
-            # Trang đã được tải, giờ chỉ cần đảm bảo nút chọn file có thể click
+            if not os.path.exists(video_path_str):
+                logging.warning(f"⚠️ [Worker {worker_id}] File {os.path.basename(video_path_str)} không còn tồn tại. Bỏ qua.")
+                continue
+            if is_uploaded(video_id, account_name):
+                logging.info(f"🔵 [Worker {worker_id}] Video {video_id} đã được xử lý. Bỏ qua.")
+                continue
+
+            source, _ = find_video_source(video_id)
+            description = get_description(video_id) or ""
+            logging.info(f"--- 📤 [Worker {worker_id}] Bắt đầu upload: {video_id} ---")
+
+            # Đảm bảo trang không bị treo
+            if page.is_closed():
+                logging.warning(f"[Worker {worker_id}] Trang đã bị đóng. Tạo lại trang mới...")
+                page = await context.new_page()
+                await page.goto(TT_STUDIO_UPLOAD_URL, wait_until="domcontentloaded")
+
+            # Chọn file và upload
             await page.locator(TT_SELECT_VIDEO_BUTTON_XPATH).wait_for(state="visible", timeout=60000)
-            async with page.expect_file_chooser() as fc_info:
+            async with page.expect_file_chooser(timeout=30000) as fc_info:
                 await page.locator(TT_SELECT_VIDEO_BUTTON_XPATH).click()
             file_chooser = await fc_info.value
-            await file_chooser.set_files(video_path_str)
+            await file_chooser.set_files(video_path_str, timeout=30000)
+            
             logging.info(f"📂 [Worker {worker_id}] Đã chọn file: {video_path.name}")
             success = await complete_upload_process(page, video_id, description, source, account_name)
+            
             if success:
                 logging.info(f"✅ [Worker {worker_id}] Upload thành công {video_id}.")
-                # Sau khi thành công, quay lại trang upload để sẵn sàng cho video tiếp theo
                 await page.goto(TT_STUDIO_UPLOAD_URL, wait_until="domcontentloaded")
             else:
-                 # Nếu thất bại, cũng tải lại trang để tránh bị kẹt
                 logging.warning(f"⚠️ [Worker {worker_id}] Upload thất bại cho {video_id}. Tải lại trang.")
                 await page.goto(TT_STUDIO_UPLOAD_URL, wait_until="domcontentloaded")
+
         except Exception as e:
-            logging.error(f"❌ [Worker {worker_id}] Lỗi nghiêm trọng khi upload {video_id}: {e}")
-            await page.screenshot(path=f"error_auto_worker_{worker_id}_{video_id}.png")
-            logging.warning(f"🚨 [Worker {worker_id}] Lỗi xảy ra, video sẽ không được thử lại. Tải lại trang.")
+            error_message = str(e)
+            logging.error(f"❌ [Worker {worker_id}] Lỗi nghiêm trọng khi upload {video_id}: {error_message}")
             try:
+                await page.screenshot(path=f"error_auto_worker_{worker_id}_{video_id}.png")
+            except Exception as screenshot_error:
+                logging.error(f"📸 Không thể chụp ảnh màn hình (trang có thể đã crash): {screenshot_error}")
+
+            # Logic xử lý lỗi và retry
+            if "Cannot transfer files larger than 50Mb" in error_message:
+                logging.error(f"🚫 [Worker {worker_id}] File quá lớn, sẽ không thử lại video này.")
+            else:
+                logging.warning(f"🚨 [Worker {worker_id}] Lỗi không xác định, sẽ thử lại video sau.")
+                await queue.put(video_path_str) # Đưa video lại hàng đợi
+            
+            # Phục hồi worker để xử lý video tiếp theo
+            logging.warning(f"🚨 [Worker {worker_id}] Đang cố gắng khởi tạo lại tab cho worker...")
+            try:
+                if not page.is_closed():
+                    await page.close()
+                page = await context.new_page()
                 await page.goto(TT_STUDIO_UPLOAD_URL, wait_until="domcontentloaded")
-            except Exception as page_reload_e:
-                logging.error(f"❌ [Worker {worker_id}] Không thể tải lại trang upload: {page_reload_e}")
+                logging.info(f"✅ [Worker {worker_id}] Đã tạo lại tab thành công và sẵn sàng cho video tiếp theo.")
+            except Exception as recovery_error:
+                logging.critical(f"💀 [Worker {worker_id}] KHÔNG THỂ PHỤC HỒI. Worker này sẽ dừng. Lỗi: {recovery_error}")
+                break # Thoát khỏi vòng lặp while, kết thúc worker này
         finally:
             queue.task_done()
 
@@ -239,22 +284,15 @@ async def run_auto_mode(account_name: str):
     upload_queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
  
-    # Mở bằng playwright
-    """
-    async with async_playwright() as p:
-        context = await p.chromium.launch_persistent_context(
-            get_profile_dir(account_name),
-            headless=False,
-            executable_path=CHROME_EXECUTABLE,
-            args=["--disable-extensions", "--disable-popup-blocking"]
-        )
-    """
-    # Mở bằng Chrome với profile đã chỉ định
     open_chrome_for_automation(account_name)
     async with async_playwright() as p:
         try:
             browser = await p.chromium.connect_over_cdp(f"http://localhost:{CHROME_DEBUG_PORT}", timeout=60000)
             context = browser.contexts[0]
+        except TimeoutError:
+            logging.error(f"❌ Timeout: Không thể kết nối tới Chrome qua CDP trong 60 giây.")
+            logging.error("Hãy chắc chắn rằng Chrome đã được mở và cổng gỡ lỗi là chính xác.")
+            return
         except Exception as e:
             logging.error(f"❌ Không thể kết nối tới Chrome qua CDP. Lỗi: {e}")
             logging.error("Hãy chắc chắn rằng không có tiến trình Chrome nào khác đang chạy với cùng một profile hoặc cổng gỡ lỗi.")
@@ -265,9 +303,10 @@ async def run_auto_mode(account_name: str):
         logging.info(f"🚀 Khởi tạo {num_workers} worker(s) để upload song song.")
         tasks = []
         for i in range(num_workers):
-            page = await context.new_page()
-            task = asyncio.create_task(upload_processor(upload_queue, account_name, page, worker_id=i+1))
+            # Truyền context vào mỗi worker để chúng có thể tự tạo lại page
+            task = asyncio.create_task(upload_processor(upload_queue, account_name, context, worker_id=i+1))
             tasks.append(task)
+            
         logging.info("🔍 Quét các video đã có...")
         initial_candidates = get_upload_candidates(account_name, show_list=False)
         if initial_candidates:
@@ -312,6 +351,10 @@ async def run_manual_mode(account_name: str):
     async with async_playwright() as p:
         try:
             browser = await p.chromium.connect_over_cdp(f"http://localhost:{CHROME_DEBUG_PORT}", timeout=60000)
+        except TimeoutError:
+            logging.error(f"❌ Timeout: Không thể kết nối tới Chrome qua CDP trong 60 giây.")
+            logging.error("Hãy chắc chắn rằng Chrome đã được mở và cổng gỡ lỗi là chính xác.")
+            return
         except Exception as e:
             logging.error(f"❌ Không thể kết nối tới Chrome qua CDP. Lỗi: {e}")
             return
@@ -324,20 +367,43 @@ async def run_manual_mode(account_name: str):
         try:
             logging.info("⏳ Đang chờ bạn chọn file video trong trình duyệt...")
             caption_input = page.locator(TT_CAPTION_INPUT_SELECTOR)
-            await caption_input.wait_for(state="visible", timeout=300_000)
+            try:
+                await caption_input.wait_for(state="visible", timeout=300_000)
+            except TimeoutError:
+                logging.error("❌ Timeout: Bạn đã không chọn file video trong 5 phút.")
+                try:
+                    await page.screenshot(path="error_manual_no_file_selected.png")
+                except Exception as screenshot_error:
+                    logging.error(f"📸 Không thể chụp ảnh màn hình: {screenshot_error}")
+                return
+
             logging.info("⏳ Đang chờ TikTok xử lý video và điền tên file vào caption...")
-            await page.wait_for_function(
-                "document.querySelector('div.public-DraftEditor-content').innerText.trim() !== ''",
-                timeout=300_000
-            )
-            video_id = (await caption_input.inner_text()).strip()
+            try:
+                await page.wait_for_function(
+                    "document.querySelector('div.public-DraftEditor-content').innerText.trim() !== ''",
+                    timeout=300_000
+                )
+            except TimeoutError:
+                logging.error("❌ Timeout: TikTok đã không xử lý video và điền caption sau 5 phút.")
+                try:
+                    await page.screenshot(path="error_manual_caption_fill_timeout.png")
+                except Exception as screenshot_error:
+                    logging.error(f"📸 Không thể chụp ảnh màn hình: {screenshot_error}")
+                return
+
+            video_id_full = (await caption_input.inner_text()).strip()
+            video_id = get_id_from_stem(video_id_full)
             video_source, _ = find_video_source(video_id)
             description = get_description(video_id) or ""
+            logging.info(f"   📝 Mô tả: {description or 'Không có mô tả'}")
             await complete_upload_process(page, video_id, description, video_source, account_name)
             logging.info("\n✅ Hoàn tất. Bạn có thể đóng cửa sổ Chrome hoặc upload video tiếp theo.")
         except Exception as e:
             logging.error(f"❌ Lỗi trong quá trình upload thủ công: {e}")
-            await page.screenshot(path=f"error_manual.png")
+            try:
+                await page.screenshot(path=f"error_manual.png")
+            except Exception as screenshot_error:
+                logging.error(f"📸 Không thể chụp ảnh màn hình: {screenshot_error}")
         finally:
             await browser.close()
 

@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import socket
 
 # Base paths
 BASE_DIR = Path(__file__).parent
@@ -32,8 +33,69 @@ TT_CONFIRM_POST_BUTTON_SELECTOR = 'button.TUXButton--primary:has-text("Đăng ng
 # Đường dẫn đến Chrome executable và cổng debug
 # Cần đảm bảo Chrome đã được cài đặt và có thể truy cập từ đường dẫn
 # Ưu tiên sử dụng biến môi trường CHROME_EXECUTABLE_PATH nếu có
-CHROME_EXECUTABLE = os.environ.get("CHROME_EXECUTABLE_PATH", "google-chrome")
-CHROME_DEBUG_PORT = 9222
+import platform
+import shutil
+def _get_chrome_executable_path():
+    """
+    Tự động phát hiện đường dẫn đến Chrome executable dựa trên hệ điều hành.
+    Ưu tiên biến môi trường, sau đó tìm kiếm trong các đường dẫn phổ biến.
+    """
+    # 1. Ưu tiên biến môi trường
+    executable_path = os.environ.get("CHROME_EXECUTABLE_PATH")
+    if executable_path and shutil.which(executable_path):
+        return executable_path
+
+    system = platform.system()
+    
+    # 2. Tìm kiếm trên Linux
+    if system == "Linux":
+        for exe in ["google-chrome", "google-chrome-stable", "chromium-browser", "chromium"]:
+            path = shutil.which(exe)
+            if path:
+                return path
+
+    # 3. Tìm kiếm trên Windows
+    elif system == "Windows":
+        common_paths = [
+            os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe"),
+        ]
+        for path in common_paths:
+            if os.path.exists(path):
+                return path
+        # Fallback to shutil.which for Windows
+        path = shutil.which("chrome")
+        if path:
+            return path
+
+    # 4. Tìm kiếm trên macOS
+    elif system == "Darwin":
+        mac_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        if os.path.exists(mac_path):
+            return mac_path
+        # Fallback to shutil.which for macOS
+        path = shutil.which("Google Chrome")
+        if path:
+            return path
+
+    raise FileNotFoundError(
+        "Không thể tìm thấy Google Chrome. "
+        "Vui lòng cài đặt Chrome hoặc đặt biến môi trường 'CHROME_EXECUTABLE_PATH' "
+        "trỏ đến file thực thi của Chrome."
+    )
+
+CHROME_EXECUTABLE = _get_chrome_executable_path()
+
+# Cổng debug từ xa cho Chrome (nên dùng cổng riêng cho mỗi stalker)
+def find_free_port():
+    """Finds a free port on the system."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
+CHROME_DEBUG_PORT = find_free_port()
 
 # Số lượng video upload song song trong chế độ 'auto'
 # Đặt giá trị cao có thể yêu cầu nhiều tài nguyên hệ thống (CPU, RAM)
@@ -42,147 +104,9 @@ MAX_CONCURRENT_UPLOADS = 3
 # Video sources
 VIDEO_SOURCES = {
     'fb': PROJECT_ROOT / 'stalkers' / 'facebook' / 'videos',
-    'yt': PROJECT_ROOT / 'stalkers' / 'youtube' / 'videos'
+    #'yt': PROJECT_ROOT / 'stalkers' / 'youtube' / 'videos'
 }
 # Directory to store accounts
 ACCOUNTS_DIR = BASE_DIR / 'accounts'
 # Tạo thư mục nếu chưa có
 ACCOUNTS_DIR.mkdir(parents=True, exist_ok=True)
-
-def get_video_stalker_dir(source_name: str) -> Path:
-    """Lấy đường dẫn đến thư mục video của một nguồn stalker."""
-    return VIDEO_SOURCES.get(source_name.lower())
-
-def get_profile_dir(account_name: str) -> Path:
-    """Lấy đường dẫn đến thư mục profile của một tài khoản."""
-    return ACCOUNTS_DIR / account_name
-
-def get_cookies_path(account_name: str) -> Path:
-    """Lấy đường dẫn đến file cookies JSON của một tài khoản."""
-    return get_profile_dir(account_name) / 'cookies.json'
-
-def get_history_path(account_name: str) -> Path:
-    """Lấy đường dẫn đến file history.json của một tài khoản."""
-    return get_profile_dir(account_name) / 'history.json'
-
-def get_all_videos(silent=False):
-    """Lấy tất cả video từ các nguồn"""
-    videos = []
-    for source_dir in VIDEO_SOURCES.values():
-        if source_dir.exists():
-            if not silent:
-                print(f"📂 Đang quét video từ: {source_dir}")
-            videos.extend([f for f in source_dir.iterdir() if f.suffix.lower() in ['.mp4', '.webm', '.mov', '.avi', '.mkv']])
-    return sorted(videos)
-
-def get_description(video_id: str) -> str:
-    """
-    Tìm description của video bằng cách đọc file metadata (.json) tương ứng.
-    File metadata được giả định có cùng tên với file video nhưng có phần mở rộng là .json
-    và được lưu cùng thư mục với video.
-    """
-    for source_dir in VIDEO_SOURCES.values():
-        metadata_path = source_dir / f"{video_id}.json"
-        if metadata_path.exists():
-            try:
-                with open(metadata_path, 'r', encoding='utf-8') as f:
-                    metadata = json.load(f)
-                return metadata.get("title", "")
-            except (json.JSONDecodeError, IOError):
-                continue # Nếu file lỗi, tiếp tục tìm ở nguồn khác
-    return ""
-
-def find_video_source(video_id):
-    """Tìm nguồn video (fb/yt) từ video_id"""
-    for source_name, source_dir in VIDEO_SOURCES.items():
-        if source_dir.exists():
-            for file in source_dir.glob(f"{video_id}*"):
-                return source_name, file
-    return None, None
-
-def delete_video_file(video_id, source_hint=None):
-    """Xóa video đã upload, có thể chỉ định nguồn để tối ưu"""
-    if source_hint:
-        # Xóa từ nguồn cụ thể
-        source_dir = VIDEO_SOURCES.get(source_hint)
-        if source_dir and source_dir.exists():
-            for file in source_dir.glob(f"{video_id}*"):
-                try:
-                    file.unlink()
-                    print(f"🗑️ Đã xóa [{source_hint.upper()}]: {file.name}")
-                    return True
-                except Exception as e:
-                    print(f"⚠️ Lỗi xóa {file.name}: {e}")
-    # Fallback: tìm trong tất cả nguồn
-    deleted = False
-    for source_dir in VIDEO_SOURCES.values():
-        for file in source_dir.glob(f"{video_id}*"):
-            try:
-                file.unlink()
-                print(f"🗑️ Đã xóa: {file.name}")
-                deleted = True
-            except Exception as e:
-                print(f"⚠️ Lỗi xóa {file.name}: {e}")
-    return deleted
-
-def is_uploaded(video_id: str, account_name: str = None) -> bool:
-    """
-    Kiểm tra video đã upload lên TikTok chưa.
-    - Nếu account_name được cung cấp, chỉ kiểm tra cho tài khoản đó.
-    - Nếu không, kiểm tra xem có bất kỳ tài khoản nào đã upload chưa.
-    """
-    def _check_history_file(file_path: Path) -> bool:
-        if not file_path.exists():
-            return False
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                history = json.load(f)
-            return any(item.get("video_id") == video_id for item in history)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return False
-    if account_name:
-        # Check history for a specific account
-        return _check_history_file(get_history_path(account_name))
-    else:
-        # Check history for all accounts
-        if not ACCOUNTS_DIR.exists():
-            return False
-        for account_dir in ACCOUNTS_DIR.iterdir():
-            if account_dir.is_dir():
-                if _check_history_file(account_dir / 'history.json'):
-                    return True
-        return False
-    
-def save_upload_history(video_id: str, description: str = "", account_name: str = None):
-    """Lưu lịch sử upload TikTok vào file history của tài khoản."""
-    if not account_name:
-        raise ValueError("account_name is required to save upload history.")
-    history_file = get_history_path(account_name)
-    history_file.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with open(history_file, 'r', encoding='utf-8') as f:
-            history = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        history = []
-    from datetime import datetime
-    history.append({
-        "video_id": video_id,
-        "description": description,
-        "upload_time": datetime.now().isoformat(),
-        "account_name": account_name,
-    })
-    with open(history_file, 'w', encoding='utf-8') as f:
-        json.dump(history, f, ensure_ascii=False, indent=2)
-    print(f"💾 Đã lưu {video_id} (tài khoản: {account_name}) vào TT history")
-    
-def get_upload_count(account_name: str) -> int:
-    """Đếm số lượng video đã upload của một tài khoản."""
-    history_path = get_history_path(account_name)
-    if not history_path.exists():
-        return 0
-    try:
-        with open(history_path, 'r', encoding='utf-8') as f:
-            history = json.load(f)
-        return len(history)
-    except (json.JSONDecodeError, FileNotFoundError):
-        return 0

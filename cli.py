@@ -13,7 +13,8 @@ from rich.table import Table
 from rich.panel import Panel
 
 # Import config để lấy đường dẫn accounts
-from Tiktok.config import ACCOUNTS_DIR, get_all_videos, is_uploaded, get_upload_count
+from Tiktok.config import ACCOUNTS_DIR
+from Tiktok.utils import get_all_videos, is_uploaded, get_upload_count
 
 # Định nghĩa tập trung tất cả các lệnh
 COMMANDS = [

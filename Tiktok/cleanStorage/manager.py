@@ -14,47 +14,13 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-# Import từ config chung
-from Tiktok.config import (
-    VIDEO_SOURCES,
-    ACCOUNTS_DIR,
-    get_all_videos,
-    is_uploaded,
-    get_history_path
+
+# Import config để lấy đường dẫn accounts
+from Tiktok.config import ACCOUNTS_DIR, VIDEO_SOURCES
+from Tiktok.utils import (
+    ACCOUNTS_DIR, VIDEO_SOURCES, get_all_videos, is_uploaded, get_history_path,
+    get_unique_uploaded_video_ids_across_accounts, get_video_id
 )
-
-
-def get_all_uploaded_video_ids():
-    """
-    Lấy danh sách tất cả video_id đã được upload bởi bất kỳ tài khoản nào.
-    """
-    uploaded_ids = set()
-    
-    if not ACCOUNTS_DIR.exists():
-        return uploaded_ids
-    
-    for account_dir in ACCOUNTS_DIR.iterdir():
-        if not account_dir.is_dir():
-            continue
-            
-        history_file = account_dir / 'history.json'
-        if not history_file.exists():
-            continue
-            
-        try:
-            with open(history_file, 'r', encoding='utf-8') as f:
-                history = json.load(f)
-            
-            for item in history:
-                video_id = item.get("video_id")
-                if video_id:
-                    uploaded_ids.add(video_id)
-                    
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"⚠️ Lỗi đọc history từ {history_file}: {e}")
-            continue
-    
-    return uploaded_ids
 
 
 def clean_pending_videos(dry_run=False):
@@ -74,12 +40,14 @@ def clean_pending_videos(dry_run=False):
     pending_videos = []
     uploaded_count = 0
     
+    # Lấy danh sách ID video đã upload một lần duy nhất
+    uploaded_video_ids = get_unique_uploaded_video_ids_across_accounts()
+
     for video_path in all_videos:
-        # Lấy video_id từ tên file (bỏ extension)
-        video_id = video_path.stem
+        video_id = get_video_id(video_path)
         
-        if is_uploaded(video_id):
-            uploaded_count = 1
+        if video_id in uploaded_video_ids:
+            uploaded_count += 1
         else:
             pending_videos.append(video_path)
     
@@ -92,22 +60,32 @@ def clean_pending_videos(dry_run=False):
         print("✨ Không có video pending nào cần dọn dẹp!")
         return
     
+    # Tạo danh sách file sẽ bị xóa cho cả dry_run và xóa thật
+    files_to_delete_map = {}
+    for video_path in pending_videos:
+        video_id = get_video_id(video_path)
+        # Pattern đúng: tìm tất cả file bắt đầu bằng video_id
+        related_files = list(video_path.parent.glob(f"{video_id}*"))
+        if related_files:
+            files_to_delete_map[video_path.name] = related_files
+
+    if not files_to_delete_map:
+        print("✨ Không tìm thấy file cụ thể nào để xóa cho các video pending.")
+        return
+
     if dry_run:
-        print(f"\n📋 Danh sách {len(pending_videos)} video pending sẽ bị xóa:")
-        for video_path in pending_videos:
-            # Tìm file metadata tương ứng
-            metadata_files = list(video_path.parent.glob(f"{video_path.stem}.*"))
-            metadata_files = [f for f in metadata_files if f.suffix.lower() in ['.json', '.txt', '.info']]
-            
-            print(f"   🗑️ {video_path.name}")
-            for meta_file in metadata_files:
+        print(f"\n📋 Danh sách {len(files_to_delete_map)} nhóm video pending sẽ bị xóa:")
+        for video_name, related_files in files_to_delete_map.items():
+            print(f"   🗑️ {video_name} và các file liên quan:")
+            for meta_file in related_files:
                 print(f"      📄 {meta_file.name}")
         
         print(f"\n💡 Để thực hiện xóa, chạy lại lệnh mà không có --dry-run")
         return
     
     # Xác nhận trước khi xóa
-    response = input(f"\n⚠️ Bạn có chắc muốn xóa {len(pending_videos)} video pending? (y/N): ")
+    total_files_to_delete = sum(len(files) for files in files_to_delete_map.values())
+    response = input(f"\n⚠️ Bạn có chắc muốn xóa {total_files_to_delete} file của {len(files_to_delete_map)} video pending? (y/N): ")
     if response.lower() not in ['y', 'yes']:
         print("❌ Hủy bỏ thao tác dọn dẹp.")
         return
@@ -116,21 +94,15 @@ def clean_pending_videos(dry_run=False):
     deleted_count = 0
     error_count = 0
     
-    for video_path in pending_videos:
-        try:
-            # Tìm và xóa tất cả file liên quan (video  metadata)
-            video_id = video_path.stem
-            related_files = list(video_path.parent.glob(f"{video_id}.*"))
-            
-            for file_to_delete in related_files:
+    for video_name, related_files in files_to_delete_map.items():
+        for file_to_delete in related_files:
+            try:
                 file_to_delete.unlink()
                 print(f"🗑️ Đã xóa: {file_to_delete.name}")
-            
-            deleted_count = len(related_files)
-            
-        except Exception as e:
-            print(f"⚠️ Lỗi xóa {video_path.name}: {e}")
-            error_count = 1
+                deleted_count += 1
+            except Exception as e:
+                print(f"⚠️ Lỗi xóa {file_to_delete.name}: {e}")
+                error_count += 1
     
     print(f"\n✅ Hoàn thành!")
     print(f"   🗑️ Đã xóa: {deleted_count} file")
@@ -152,7 +124,7 @@ def clean_uploaded_videos(dry_run=False):
         print("📭 Không có video nào được tìm thấy.")
         return
     
-    uploaded_video_ids = get_all_uploaded_video_ids()
+    uploaded_video_ids = get_unique_uploaded_video_ids_across_accounts()
     if not uploaded_video_ids:
         print("📭 Không có lịch sử upload nào.")
         return
@@ -161,12 +133,12 @@ def clean_uploaded_videos(dry_run=False):
     pending_count = 0
     
     for video_path in all_videos:
-        video_id = video_path.stem
+        video_id = get_video_id(video_path)
         
         if video_id in uploaded_video_ids:
             uploaded_videos.append(video_path)
         else:
-            pending_count = 1
+            pending_count += 1
     
     print(f"📊 Tổng quan:")
     print(f"   📹 Tổng số video: {len(all_videos)}")
@@ -176,23 +148,33 @@ def clean_uploaded_videos(dry_run=False):
     if not uploaded_videos:
         print("✨ Không có video đã upload nào cần dọn dẹp!")
         return
-    
+
+    # Tạo danh sách file sẽ bị xóa cho cả dry_run và xóa thật
+    files_to_delete_map = {}
+    for video_path in uploaded_videos:
+        video_id = get_video_id(video_path)
+        # Pattern đúng: tìm tất cả file bắt đầu bằng video_id
+        related_files = list(video_path.parent.glob(f"{video_id}*"))
+        if related_files:
+            files_to_delete_map[video_path.name] = related_files
+
+    if not files_to_delete_map:
+        print("✨ Không tìm thấy file cụ thể nào để xóa cho các video đã upload.")
+        return
+
     if dry_run:
-        print(f"\n📋 Danh sách {len(uploaded_videos)} video đã upload sẽ bị xóa:")
-        for video_path in uploaded_videos:
-            # Tìm file metadata tương ứng
-            metadata_files = list(video_path.parent.glob(f"{video_path.stem}.*"))
-            metadata_files = [f for f in metadata_files if f.suffix.lower() in ['.json', '.txt', '.info']]
-            
-            print(f"   🗑️ {video_path.name}")
-            for meta_file in metadata_files:
+        print(f"\n📋 Danh sách {len(files_to_delete_map)} nhóm video đã upload sẽ bị xóa:")
+        for video_name, related_files in files_to_delete_map.items():
+            print(f"   🗑️ {video_name} và các file liên quan:")
+            for meta_file in related_files:
                 print(f"      📄 {meta_file.name}")
         
         print(f"\n💡 Để thực hiện xóa, chạy lại lệnh mà không có --dry-run")
         return
     
     # Xác nhận trước khi xóa
-    response = input(f"\n⚠️ Bạn có chắc muốn xóa {len(uploaded_videos)} video đã upload? (y/N): ")
+    total_files_to_delete = sum(len(files) for files in files_to_delete_map.values())
+    response = input(f"\n⚠️ Bạn có chắc muốn xóa {total_files_to_delete} file của {len(files_to_delete_map)} video đã upload? (y/N): ")
     if response.lower() not in ['y', 'yes']:
         print("❌ Hủy bỏ thao tác dọn dẹp.")
         return
@@ -201,26 +183,21 @@ def clean_uploaded_videos(dry_run=False):
     deleted_count = 0
     error_count = 0
     
-    for video_path in uploaded_videos:
-        try:
-            # Tìm và xóa tất cả file liên quan (video  metadata)
-            video_id = video_path.stem
-            related_files = list(video_path.parent.glob(f"{video_id}.*"))
-            
-            for file_to_delete in related_files:
+    for video_name, related_files in files_to_delete_map.items():
+        for file_to_delete in related_files:
+            try:
                 file_to_delete.unlink()
                 print(f"🗑️ Đã xóa: {file_to_delete.name}")
-            
-            deleted_count = len(related_files)
-            
-        except Exception as e:
-            print(f"⚠️ Lỗi xóa {video_path.name}: {e}")
-            error_count = 1
+                deleted_count += 1
+            except Exception as e:
+                print(f"⚠️ Lỗi xóa {file_to_delete.name}: {e}")
+                error_count += 1
     
     print(f"\n✅ Hoàn thành!")
     print(f"   🗑️ Đã xóa: {deleted_count} file")
     if error_count > 0:
         print(f"   ❌ Lỗi: {error_count} file")
+
 
 
 def main():

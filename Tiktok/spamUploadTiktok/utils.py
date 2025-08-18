@@ -1,6 +1,8 @@
 import re
 import random
 
+from . import utils
+
 def clean_caption(text):
     """
     Làm sạch caption bằng cách loại bỏ các phần không cần thiết một cách linh hoạt.
@@ -13,8 +15,8 @@ def clean_caption(text):
 
     # Các mẫu phân cách. `re.IGNORECASE` sẽ xử lý các biến thể hoa/thường.
     # Thứ tự trong group quan trọng, ví dụ 'credit to' phải đứng trước 'credit'.
-    # `\\n` là để xử lý chuỗi literal '\n' có thể có từ API/JSON.
-    delimiters_pattern = r'\\n|#|\||©️|//|\b(credit to|credit|creds|via|source)\b'
+    # `\n` là để xử lý chuỗi literal '\n' có thể có từ API/JSON.
+    delimiters_pattern = r'\n|#|\||©️|//|\b(credit to|credit|creds|via|source)\b'
 
     # Tách chuỗi tại lần xuất hiện đầu tiên của một trong các delimiter
     parts = re.split(delimiters_pattern, text, maxsplit=1, flags=re.IGNORECASE)
@@ -28,15 +30,18 @@ def clean_caption(text):
     return cleaned_text
 
 def generate_hashtags():
-    """Tạo một chuỗi hashtags ngẫu nhiên và đa dạng."""
+    """
+    Tạo một chuỗi hashtags ngẫu nhiên và đa dạng.
+    """
     core_hashtags = [
-        '#CollectedVideo', '#FoundVideo', '#NotOriginal', '#CreditToCreator',
-        '#VideoCollection', '#CuratedContent', '#SharedVideo', '#NotMyVideo',
-        '#JustSharing', '#Sututam'  # Sưu tầm
+        '#RepostedVideo', '#ClipSuuTam', '#NguonKhac', '#CreditNguon',
+        '#VideoSelect', '#ChiaSeClip', '#ThuThapVideo',
+        '#JustRepost', '#Suutam'
     ]
+
     trending_hashtags = [
-        '#ForYou', '#FYP', '#Viral', '#Trending', '#Entertainment',
-        '#xuhuong', '#thinhhanh', '#LearnOnTikTok'
+        '#ForYouPage', '#FYPmoi', '#HotTrend', '#XuhuongMoi',
+        '#ThinhHanh2025', '#ClipViral', '#LamGiauNoiDung', '#GiaiTriMoiNgay'
     ]
 
     # Chọn ngẫu nhiên một số lượng hashtags từ mỗi nhóm

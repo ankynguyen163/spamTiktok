@@ -11,7 +11,8 @@ project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(project_root))
 
 from rich.console import Console
-from Tiktok.config import get_history_path, ACCOUNTS_DIR
+from Tiktok.config import ACCOUNTS_DIR
+from Tiktok.utils import get_history_path
 
 console = Console()
 

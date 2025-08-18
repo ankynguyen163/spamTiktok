@@ -43,19 +43,19 @@ def main():
             args=["--disable-blink-features=AutomationControlled"]
         )
         page = context.new_page()
-        page.goto("https://www.facebook.com")
-        
-        print("\n" + "="*50)
-        print("👉 Vui lòng đăng nhập vào tài khoản Facebook của bạn trên trình duyệt.")
-        print("✨ Script sẽ tự động tiếp tục sau khi phát hiện bạn đã đăng nhập thành công.")
-        print("="*50)
 
         try:
-            # Chờ sự xuất hiện của một phần tử chỉ có sau khi đăng nhập (ví dụ: khu vực news feed chính)
+            page.goto("https://www.facebook.com/login")
+
+            print("\n" + "="*50)
+            print("👉 Vui lòng đăng nhập vào tài khoản Facebook của bạn trên trình duyệt.")
+            print("✨ Script sẽ tự động tiếp tục sau khi phát hiện bạn đã đăng nhập thành công.")
+            print("="*50)
+
+            # Chờ người dùng đăng nhập thành công, được xác định bằng việc điều hướng về trang chủ Facebook.
             # Timeout được đặt là 5 phút (300000 ms) để người dùng có đủ thời gian
-            logged_in_element_selector = 'div[role="main"]'
-            print("⏳ Đang chờ tín hiệu đăng nhập thành công...")
-            page.wait_for_selector(logged_in_element_selector, timeout=300000)
+            print("⏳ Đang chờ bạn đăng nhập...")
+            page.wait_for_url("https://www.facebook.com/", timeout=300000)
 
             print("\n✅ Đăng nhập thành công được phát hiện!")
             print("🔄 Đang lấy và lưu cookie...")
@@ -63,14 +63,16 @@ def main():
             netscape_format_cookies = convert_cookies_to_netscape(cookies)
             fb_config.COOKIE_FILE.write_text(netscape_format_cookies)
 
-            print(f"✅ Đã lưu cookie thành công vào: {fb_config.COOKIE_FILE}")
-            print(f"✅ Đã lưu profile trình duyệt vào: {fb_config.PROFILE_DIR.resolve()}")
+            print(f"✅ Đã lưu cookie thành công vào: {fb_config.COOKIE_FILE.resolve()}")
+            print(f"✅ Đã lưu profile trình duyệt vào: {fb_config.PROFILE_DIR.resolve()}.")
 
         except Exception as e:
             print("\n❌ Không phát hiện được đăng nhập trong vòng 5 phút hoặc có lỗi xảy ra.")
             logging.debug(f"Lỗi khi chờ đăng nhập: {e}")
 
-        context.close()
+        finally:
+            context.close()
+            print("\n🎉 Script đã hoàn thành. Trình duyệt đã được đóng.")
 
 if __name__ == "__main__":
     main()

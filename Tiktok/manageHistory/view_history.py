@@ -13,7 +13,8 @@ sys.path.append(str(project_root))
 from rich.console import Console
 from rich.table import Table
 
-from Tiktok.config import get_history_path, ACCOUNTS_DIR
+from Tiktok.config import ACCOUNTS_DIR
+from Tiktok.utils import get_history_path
 
 console = Console()
 
